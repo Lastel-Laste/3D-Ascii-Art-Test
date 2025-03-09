@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>ASCII 3D Donut Renderer with Shading & Triple Rotation (Larger Screen)</title>
+  <style>
+    body { margin: 0; background: black; }
+    pre {
+      color: #fff;
+      font-family: monospace;
+      font-size: 12px;
+      text-align: center;
+      line-height: 12px;
+      margin: 0;
+    }
+  </style>
+</head>
+<body>
+  <pre id="donutCanvas"></pre>
+  <script>
+    // 캔버스 크기 (출력 문자 그리드)
+    const width = 200;
+    const height = 100;
+    const canvas = document.getElementById('donutCanvas');
+    
+    // 출력 문자 버퍼와 z‑버퍼 초기화
+    const output = new Array(width * height).fill(' ');
+    const zBuffer = new Array(width * height).fill(0);
+    
+    // 토러스(도넛) 관련 파라미터
+    const R1 = 1;   // 튜브(도넛의 굵기)
+    const R2 = 2;   // 토러스 중심의 반지름
+    const K2 = 5;   // 관찰자와의 거리
+    // 원래 K1 = width * K2 * 3 / (8 * (R1 + R2)) 에서, 캔버스 확대에 따라 너무 커지는 것을 방지하기 위해 0.5배 적용
+    const K1 = (width * K2 * 3 / (8 * (R1 + R2))) * 0.5;  
+    
+    // 회전 각도 (세 축: X, Y, Z)
+    let A = 0, B = 0, C = 0;
+    
+    // 광원 벡터 (정규화된 상태)
+    const L = { x: 0, y: 1/Math.sqrt(2), z: -1/Math.sqrt(2) };
+    
+    // 3D 회전: X축 A, Y축 B, Z축 C 순서로 회전 적용
+    function rotate3D(x, y, z, A, B, C) {
+      // X축 회전
+      let x1 = x;
+      let y1 = y * Math.cos(A) - z * Math.sin(A);
+      let z1 = y * Math.sin(A) + z * Math.cos(A);
+      // Y축 회전
+      let x2 = x1 * Math.cos(B) + z1 * Math.sin(B);
+      let y2 = y1;
+      let z2 = -x1 * Math.sin(B) + z1 * Math.cos(B);
+      // Z축 회전
+      let x3 = x2 * Math.cos(C) - y2 * Math.sin(C);
+      let y3 = x2 * Math.sin(C) + y2 * Math.cos(C);
+      let z3 = z2;
+      return { x: x3, y: y3, z: z3 };
+    }
+    
+    function render() {
+      // 버퍼 초기화
+      output.fill(' ');
+      zBuffer.fill(0);
+      
+      // 토러스의 각 점을 두 매개변수 theta, phi로 순회
+      for (let theta = 0; theta < 2 * Math.PI; theta += 0.07) {
+        for (let phi = 0; phi < 2 * Math.PI; phi += 0.02) {
+          // 토러스의 표면 점 (로컬 좌표)
+          const cosTheta = Math.cos(theta);
+          const sinTheta = Math.sin(theta);
+          const cosPhi = Math.cos(phi);
+          const sinPhi = Math.sin(phi);
+          // 토러스의 단면 위치: (R2 + R1*cosTheta, R1*sinTheta)
+          const circleX = R2 + R1 * cosTheta;
+          const circleY = R1 * sinTheta;
+          // 로컬 3D 좌표 (토러스의 표면)
+          let x = circleX * cosPhi;
+          let y = circleX * sinPhi;
+          let z = circleY;
+          
+          // 3축 회전 적용
+          const rotatedPoint = rotate3D(x, y, z, A, B, C);
+          
+          // 표면의 법선 벡터 (로컬 좌표에서 단면의 중심을 향하는 벡터)
+          let nx = cosTheta * cosPhi;
+          let ny = cosTheta * sinPhi;
+          let nz = sinTheta;
+          // 회전 적용 (법선도 같이 회전)
+          const rotatedNormal = rotate3D(nx, ny, nz, A, B, C);
+          
+          // 원근 투영: 관찰자와의 거리(K2)를 고려
+          const zInv = 1 / (rotatedPoint.z + K2);
+          const xp = Math.floor(width / 2 + K1 * zInv * rotatedPoint.x);
+          const yp = Math.floor(height / 2 - K1 * zInv * rotatedPoint.y);
+          
+          // 조명: 회전된 법선과 광원 벡터의 내적
+          const luminance = rotatedNormal.x * L.x + rotatedNormal.y * L.y + rotatedNormal.z * L.z;
+          
+          if (luminance > 0) {
+            // 화면 범위 내에 있는지 체크
+            if (xp >= 0 && xp < width && yp >= 0 && yp < height) {
+              const idx = xp + yp * width;
+              if (zInv > zBuffer[idx]) {
+                zBuffer[idx] = zInv;
+                // 밝기 단계에 따른 문자 선택
+                const luminanceChars = ".,-~:;=!*#$@";
+                let luminanceIndex = Math.floor(luminance * (luminanceChars.length - 1));
+                output[idx] = luminanceChars[luminanceIndex];
+              }
+            }
+          }
+        }
+      }
+      
+      // 1차원 버퍼를 줄바꿈 포함 문자열로 변환하여 출력
+      let result = "";
+      for (let i = 0; i < height; i++) {
+        result += output.slice(i * width, (i + 1) * width).join('') + "\n";
+      }
+      canvas.textContent = result;
+      
+      // 회전 각도 업데이트 (속도 및 방향 변경)
+      A += 0.03;
+      B += 0.05;
+      C += 0.04;
+    }
+    
+    function animate() {
+      render();
+      requestAnimationFrame(animate);
+    }
+    
+    animate();
+  </script>
+</body>
+</html>
