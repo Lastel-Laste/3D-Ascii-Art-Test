@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>ASCII Cube 3D Animation</title>
+  <style>
+    body { margin: 0; background: black; }
+    pre {
+      color: #0f0;
+      font-family: monospace;
+      font-size: 16px;
+      text-align: center;
+      line-height: 16px;
+      margin: 0;
+    }
+  </style>
+</head>
+<body>
+  <pre id="asciiCanvas"></pre>
+  <script>
+    const canvas = document.getElementById('asciiCanvas');
+    // ASCII "화면"의 가로, 세로 크기 (문자열 배열 기준)
+    const width = 80;
+    const height = 40;
+    const grid = new Array(height);
+    let angle = 0;
+    const d = 4;       // 원근 투영을 위한 거리
+    const scale = 10;  // 화면 배율
+    const centerX = Math.floor(width / 2);
+    const centerY = Math.floor(height / 2);
+
+    // 큐브의 8개 꼭짓점 (중심을 원점으로)
+    const vertices = [
+      {x: -1, y: -1, z: -1},
+      {x:  1, y: -1, z: -1},
+      {x:  1, y:  1, z: -1},
+      {x: -1, y:  1, z: -1},
+      {x: -1, y: -1, z:  1},
+      {x:  1, y: -1, z:  1},
+      {x:  1, y:  1, z:  1},
+      {x: -1, y:  1, z:  1}
+    ];
+    // 큐브의 12개 간선 (각 배열은 두 꼭짓점의 인덱스를 나타냄)
+    const edges = [
+      [0,1],[1,2],[2,3],[3,0],
+      [4,5],[5,6],[6,7],[7,4],
+      [0,4],[1,5],[2,6],[3,7]
+    ];
+
+    // grid를 공백 문자로 초기화
+    function clearGrid() {
+      for (let y = 0; y < height; y++) {
+        grid[y] = new Array(width).fill(' ');
+      }
+    }
+
+    // Bresenham 선 그리기 알고리즘 (두 점 사이에 '*' 표시)
+    function drawLine(x0, y0, x1, y1) {
+      let dx = Math.abs(x1 - x0);
+      let dy = Math.abs(y1 - y0);
+      let sx = (x0 < x1) ? 1 : -1;
+      let sy = (y0 < y1) ? 1 : -1;
+      let err = dx - dy;
+      while (true) {
+        if (x0 >= 0 && x0 < width && y0 >= 0 && y0 < height) {
+          grid[y0][x0] = '*';
+        }
+        if (x0 === x1 && y0 === y1) break;
+        let e2 = 2 * err;
+        if (e2 > -dy) {
+          err -= dy;
+          x0 += sx;
+        }
+        if (e2 < dx) {
+          err += dx;
+          y0 += sy;
+        }
+      }
+    }
+
+    // 3D 좌표를 회전시키고 투영하여 2D 화면 좌표로 변환
+    function project(vertex, angle) {
+      // Y축 회전 변환
+      let cosA = Math.cos(angle);
+      let sinA = Math.sin(angle);
+      let x = vertex.x * cosA + vertex.z * sinA;
+      let y = vertex.y;
+      let z = -vertex.x * sinA + vertex.z * cosA;
+      // 간단한 원근 투영
+      let factor = d / (z + d);
+      let x2d = x * factor;
+      let y2d = y * factor;
+      // 화면상의 좌표로 변환 (중심 기준, y는 반전)
+      let screenX = Math.floor(centerX + x2d * scale);
+      let screenY = Math.floor(centerY - y2d * scale);
+      return {x: screenX, y: screenY};
+    }
+
+    // 매 프레임마다 그리기
+    function render() {
+      clearGrid();
+      // 회전된 좌표를 2D 화면 좌표로 변환
+      const projected = vertices.map(v => project(v, angle));
+      // 모든 간선을 그리기
+      edges.forEach(edge => {
+        const p0 = projected[edge[0]];
+        const p1 = projected[edge[1]];
+        drawLine(p0.x, p0.y, p1.x, p1.y);
+      });
+      // grid를 문자열로 변환 후 화면에 출력
+      let output = grid.map(row => row.join('')).join('\n');
+      canvas.textContent = output;
+      angle += 0.1; // 회전 속도 조절
+    }
+
+    setInterval(render, 50);
+  </script>
+</body>
+</html>
