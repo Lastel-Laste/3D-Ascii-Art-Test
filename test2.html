@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>ASCII 3D Donut Renderer with Shading & Triple Rotation (Larger Screen)</title>
+  <title>ASCII 3D Donut Renderer with Shading, Triple Rotation & Back-face Culling (Improved)</title>
   <style>
     body { margin: 0; background: black; }
     pre {
@@ -31,7 +31,7 @@
     const R1 = 1;   // 튜브(도넛의 굵기)
     const R2 = 2;   // 토러스 중심의 반지름
     const K2 = 5;   // 관찰자와의 거리
-    // 원래 K1 = width * K2 * 3 / (8 * (R1 + R2)) 에서, 캔버스 확대에 따라 너무 커지는 것을 방지하기 위해 0.5배 적용
+    // K1을 0.5 보정 적용 (사용자께서 딱 맞다고 하셨으므로)
     const K1 = (width * K2 * 3 / (8 * (R1 + R2))) * 0.5;  
     
     // 회전 각도 (세 축: X, Y, Z)
@@ -62,15 +62,15 @@
       output.fill(' ');
       zBuffer.fill(0);
       
-      // 토러스의 각 점을 두 매개변수 theta, phi로 순회
-      for (let theta = 0; theta < 2 * Math.PI; theta += 0.07) {
-        for (let phi = 0; phi < 2 * Math.PI; phi += 0.02) {
+      // θ와 φ의 증분을 작게 하여 더 촘촘하게 샘플링
+      for (let theta = 0; theta < 2 * Math.PI; theta += 0.04) {
+        for (let phi = 0; phi < 2 * Math.PI; phi += 0.01) {
           // 토러스의 표면 점 (로컬 좌표)
           const cosTheta = Math.cos(theta);
           const sinTheta = Math.sin(theta);
           const cosPhi = Math.cos(phi);
           const sinPhi = Math.sin(phi);
-          // 토러스의 단면 위치: (R2 + R1*cosTheta, R1*sinTheta)
+          // 토러스 단면 좌표: (R2 + R1*cosTheta, R1*sinTheta)
           const circleX = R2 + R1 * cosTheta;
           const circleY = R1 * sinTheta;
           // 로컬 3D 좌표 (토러스의 표면)
@@ -81,28 +81,33 @@
           // 3축 회전 적용
           const rotatedPoint = rotate3D(x, y, z, A, B, C);
           
-          // 표면의 법선 벡터 (로컬 좌표에서 단면의 중심을 향하는 벡터)
+          // 표면의 법선 벡터 (단면의 중심을 향하는 로컬 좌표)
           let nx = cosTheta * cosPhi;
           let ny = cosTheta * sinPhi;
           let nz = sinTheta;
-          // 회전 적용 (법선도 같이 회전)
+          // 법선에도 동일한 회전 적용
           const rotatedNormal = rotate3D(nx, ny, nz, A, B, C);
           
-          // 원근 투영: 관찰자와의 거리(K2)를 고려
+          // 관찰자(카메라)는 (0,0,0)으로 가정하고, z에 K2를 더해 투영 준비
+          // 표면에서 카메라 방향으로의 벡터: (-rotatedPoint.x, -rotatedPoint.y, -(rotatedPoint.z + K2))
+          // 따라서 두 벡터의 내적이 양수여야 표면이 카메라를 향함
+          const viewDot = -(rotatedNormal.x * rotatedPoint.x + 
+                            rotatedNormal.y * rotatedPoint.y + 
+                            rotatedNormal.z * (rotatedPoint.z + K2));
+          if (viewDot <= 0) continue;  // 카메라를 향하지 않으면 그리지 않음.
+          
+          // 원근 투영
           const zInv = 1 / (rotatedPoint.z + K2);
           const xp = Math.floor(width / 2 + K1 * zInv * rotatedPoint.x);
           const yp = Math.floor(height / 2 - K1 * zInv * rotatedPoint.y);
           
           // 조명: 회전된 법선과 광원 벡터의 내적
           const luminance = rotatedNormal.x * L.x + rotatedNormal.y * L.y + rotatedNormal.z * L.z;
-          
           if (luminance > 0) {
-            // 화면 범위 내에 있는지 체크
             if (xp >= 0 && xp < width && yp >= 0 && yp < height) {
               const idx = xp + yp * width;
               if (zInv > zBuffer[idx]) {
                 zBuffer[idx] = zInv;
-                // 밝기 단계에 따른 문자 선택
                 const luminanceChars = ".,-~:;=!*#$@";
                 let luminanceIndex = Math.floor(luminance * (luminanceChars.length - 1));
                 output[idx] = luminanceChars[luminanceIndex];
@@ -112,17 +117,17 @@
         }
       }
       
-      // 1차원 버퍼를 줄바꿈 포함 문자열로 변환하여 출력
+      // 버퍼를 문자열로 변환하여 출력
       let result = "";
       for (let i = 0; i < height; i++) {
         result += output.slice(i * width, (i + 1) * width).join('') + "\n";
       }
       canvas.textContent = result;
       
-      // 회전 각도 업데이트 (속도 및 방향 변경)
-      A += 0.015;
-      B += 0.025;
-      C += 0.02;
+      // 회전 각도 업데이트
+      A += 0.02;
+      B += 0.04;
+      C += 0.03;
     }
     
     function animate() {
