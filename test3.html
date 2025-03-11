@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>ASCII 3D Donut Renderer - Aspect Ratio Corrected</title>
+  <style>
+    body { margin: 0; background: black; }
+    pre { 
+      color: #fff; 
+      font-family: monospace; 
+      font-size: 12px; 
+      text-align: center; 
+      line-height: 12px; 
+      margin: 0; 
+    }
+  </style>
+</head>
+<body>
+  <pre id="donutCanvas"></pre>
+  <script>
+    const width = 200;
+    const height = 100;
+    const canvas = document.getElementById('donutCanvas');
+    
+    const output = new Array(width * height).fill(' ');
+    const zBuffer = new Array(width * height).fill(0);
+    
+    const R1 = 1, R2 = 2;
+    const K2 = 5;
+    const K1 = (width * K2 * 3 / (8 * (R1 + R2))) * 1;
+    
+    let A = 0, B = 0, C = 0;
+    
+    const L = { x: 0, y: 1/Math.sqrt(2), z: -1/Math.sqrt(2) };
+    
+    // 3D 회전 함수
+    function rotate3D(x, y, z, A, B, C) {
+      let x1 = x;
+      let y1 = y * Math.cos(A) - z * Math.sin(A);
+      let z1 = y * Math.sin(A) + z * Math.cos(A);
+      let x2 = x1 * Math.cos(B) + z1 * Math.sin(B);
+      let y2 = y1;
+      let z2 = -x1 * Math.sin(B) + z1 * Math.cos(B);
+      let x3 = x2 * Math.cos(C) - y2 * Math.sin(C);
+      let y3 = x2 * Math.sin(C) + y2 * Math.cos(C);
+      let z3 = z2;
+      return { x: x3, y: y3, z: z3 };
+    }
+    
+    function render() {
+      output.fill(' ');
+      zBuffer.fill(0);
+      
+      // 음영 문자 집합 (맨 앞에 공백 포함)
+      const luminanceChars = " .,-~:;=!*#$@";
+      
+      // 토러스 표면 샘플링
+      for (let theta = 0; theta < 2 * Math.PI; theta += 0.04) {
+        for (let phi = 0; phi < 2 * Math.PI; phi += 0.01) {
+          const cosTheta = Math.cos(theta), sinTheta = Math.sin(theta);
+          const cosPhi = Math.cos(phi), sinPhi = Math.sin(phi);
+          
+          // 토러스의 단면 좌표
+          const circleX = R2 + R1 * cosTheta;
+          const circleY = R1 * sinTheta;
+          
+          let x = circleX * cosPhi;
+          let y = circleX * sinPhi;
+          let z = circleY;
+          
+          // 회전 후 도넛의 3D 좌표
+          const rotatedPoint = rotate3D(x, y, z, A, B, C);
+          
+          // 로컬 법선 계산 및 회전 적용
+          let nx = cosTheta * cosPhi;
+          let ny = cosTheta * sinPhi;
+          let nz = sinTheta;
+          const rotatedNormal = rotate3D(nx, ny, nz, A, B, C);
+          
+          // 카메라가 (0,0,-K2)에 있으므로,
+          // 점에서 카메라로 향하는 벡터: view = { -rotatedPoint.x, -rotatedPoint.y, -K2 - rotatedPoint.z }
+          const viewVec = {
+            x: -rotatedPoint.x,
+            y: -rotatedPoint.y,
+            z: -K2 - rotatedPoint.z
+          };
+          const viewDot = rotatedNormal.x * viewVec.x +
+                          rotatedNormal.y * viewVec.y +
+                          rotatedNormal.z * viewVec.z;
+          
+          // viewDot > 0일 때만, 즉 카메라를 향하는 면만 렌더링
+          if (viewDot > 0) {
+            // 1/(z+K2) 대신 여전히 zInv를 사용 (카메라에 가까울수록 값이 큼)
+            const zInv = 1 / (rotatedPoint.z + K2);
+            const xp = Math.floor(width / 2 + K1 * rotatedPoint.x * zInv);
+            // y 좌표에 0.5 스케일 팩터 적용해 세로 비율 보정
+            const yp = Math.floor(height / 2 - K1 * rotatedPoint.y * 0.5 * zInv);
+            
+            if (xp >= 0 && xp < width && yp >= 0 && yp < height) {
+              const idx = xp + yp * width;
+              if (zInv > zBuffer[idx]) {
+                zBuffer[idx] = zInv;
+                let luminance = rotatedNormal.x * L.x + rotatedNormal.y * L.y + rotatedNormal.z * L.z;
+                luminance = Math.max(0, luminance);
+                let luminanceIndex = Math.floor(luminance * (luminanceChars.length - 1));
+                output[idx] = luminanceChars[luminanceIndex];
+              }
+            }
+          }
+        }
+      }
+      
+      let result = "";
+      for (let i = 0; i < height; i++) {
+        result += output.slice(i * width, (i + 1) * width).join('') + "\n";
+      }
+      canvas.textContent = result;
+    }
+    
+    // 마우스 드래그 및 관성 회전 관련 변수
+    let isMouseDown = false;
+    let lastX = 0, lastY = 0;
+    let rotationSpeedX = 0, rotationSpeedY = 0;
+    const friction = 0.95;
+    
+    canvas.addEventListener('mousedown', (event) => {
+      isMouseDown = true;
+      lastX = event.clientX;
+      lastY = event.clientY;
+    });
+    canvas.addEventListener('mousemove', (event) => {
+      if (isMouseDown) {
+        const deltaX = event.clientX - lastX;
+        const deltaY = event.clientY - lastY;
+        rotationSpeedX = deltaY * 0.01;
+        rotationSpeedY = -deltaX * 0.01;
+        lastX = event.clientX;
+        lastY = event.clientY;
+      }
+    });
+    canvas.addEventListener('mouseup', () => {
+      isMouseDown = false;
+    });
+    
+    function updateRotation() {
+      if (!isMouseDown) {
+        rotationSpeedX *= friction;
+        rotationSpeedY *= friction;
+        if (Math.abs(rotationSpeedX) < 0.001 && Math.abs(rotationSpeedY) < 0.001) {
+          rotationSpeedX = 0;
+          rotationSpeedY = 0;
+        }
+      }
+      A += rotationSpeedX;
+      B += rotationSpeedY;
+      
+      render();
+    }
+    
+    function animate() {
+      updateRotation();
+      requestAnimationFrame(animate);
+    }
+    
+    animate();
+  </script>
+</body>
+</html>
